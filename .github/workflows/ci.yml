@@ -41,7 +41,11 @@ jobs:
 
       - name: Start application
         env:
-          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: testdb
+          DB_USER: testuser
+          DB_PASSWORD: testpass
         run: |
           cd app
           python main.py &
