@@ -1,0 +1,52 @@
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Dependency Directories
+node_modules/
+vendor/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Build Output
+dist/
+build/
+*.o
+*.exe
+*.out
+
+# Logs
+*.log
+logs/
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# Package Files
+*.zip
+*.tar.gz
+*.rar
