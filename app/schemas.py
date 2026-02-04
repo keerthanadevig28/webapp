@@ -19,7 +19,7 @@ class UserUpdate(BaseModel):
     """Schema for updating user information"""
     first_name: Optional[str] = Field(None, min_length=1)
     last_name: Optional[str] = Field(None, min_length=1)
-    password: Optional[str] = Field(None, min_length=8)  # Changed to min 8 chars
+    password: Optional[str] = Field(None, min_length=8) 
     
     class Config:
         extra = "forbid"
@@ -31,9 +31,9 @@ class UserUpdate(BaseModel):
 class UserResponse(BaseModel):
     """Schema for user response (no password)"""
     id: UUID
-    username: str  # Added username field
+    username: str  
 
-    email: str     # Keep email for backwards compatibility
+    email: str     
     first_name: str
     last_name: str
     account_created: datetime
