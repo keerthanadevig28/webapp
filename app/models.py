@@ -25,7 +25,7 @@ class User(Base):
         return {
             "id": str(self.id),
             "email": self.email,
-            "username": self.email,  # Add username
+            "username": self.email,  
             "first_name": self.first_name,
             "last_name": self.last_name,
             "account_created": self.account_created.isoformat(),

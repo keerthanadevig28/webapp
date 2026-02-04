@@ -26,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
@@ -41,11 +41,14 @@ jobs:
 
       - name: Start application
         env:
-          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: testdb
+          DB_USER: testuser
+          DB_PASSWORD: testpass
         run: |
-          cd app
-          python main.py &
-          sleep 15
+          uvicorn app.main:app --host 0.0.0.0 --port 8080 &
+          sleep 20
 
       - name: Run integration tests
         run: |
@@ -53,7 +56,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: report.html
