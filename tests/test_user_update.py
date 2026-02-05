@@ -34,7 +34,7 @@ def test_update_user_password_success(base_url, create_test_user):
     
     assert response.status_code == 204
     
-    # Verify can login with new password
+
     response = requests.get(
         f"{base_url}/v1/user/self",
         auth=(email, new_password)
