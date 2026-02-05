@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Request, Response, HTTPException
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import OperationalError
 from app.config import get_settings
+import psycopg2
 
 router = APIRouter()
 
 @router.get("/healthz")
 async def health_check(request: Request):
-    """Health check - tests database connectivity with fresh connection"""
+    """Health check with direct psycopg2 connection"""
     body = await request.body()
     if body:
         raise HTTPException(status_code=400)
@@ -18,34 +17,33 @@ async def health_check(request: Request):
         "X-Content-Type-Options": "nosniff"
     }
     
+    settings = get_settings()
+    
+    print(f"DEBUG: Attempting to connect to database at {settings.db_host}:{settings.db_port}")
+    
     try:
-        # Create a fresh connection to test database availability
-        settings = get_settings()
-        test_engine = create_engine(
-            settings.database_url,
-            pool_pre_ping=True,  # Test connection before using
-            pool_size=1,
-            max_overflow=0
+        # Direct psycopg2 connection - no pooling
+        conn = psycopg2.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            database=settings.db_name,
+            user=settings.db_user,
+            password=settings.db_password,
+            connect_timeout=2
         )
         
-        # Try to execute a simple query
-        with test_engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-            
-            # Insert health check record
-            conn.execute(
-                text("INSERT INTO health_checks (check_datetime) VALUES (NOW())")
-            )
-            conn.commit()
+        print("DEBUG: Database connection successful")
         
-        test_engine.dispose()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO health_checks (check_datetime) VALUES (NOW())")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
         return Response(status_code=200, headers=headers)
     
-    except OperationalError:
-        # Database connection failed
-        raise HTTPException(status_code=503)
     except Exception as e:
-        # Any other database error
+        print(f"DEBUG: Database error: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=503)
 
 @router.post("/healthz")
