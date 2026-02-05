@@ -1,29 +1,16 @@
-from fastapi import APIRouter, Depends, status, Response, Request
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from app.database import get_db
-from app.models import HealthCheck
+from fastapi import APIRouter, Request, Response, HTTPException
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
+from app.config import get_settings
 
 router = APIRouter()
 
-@router.get("/healthz", status_code=status.HTTP_200_OK)
-async def health_check(
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db)
-):
-    """
-    Health check endpoint - checks database connectivity.
-    
-    Requirements:
-    - Only GET method supported (405 for others)
-    - No payload allowed (400 if payload present)
-    - No query parameters allowed (400 if present)
-    - Empty response body
-    - Cache-Control: no-cache header
-    - Insert record into health_checks table
-    - Return 200 if successful, 503 if database fails
-    """
+@router.get("/healthz")
+async def health_check(request: Request):
+    """Health check - tests database connectivity with fresh connection"""
+    body = await request.body()
+    if body:
+        raise HTTPException(status_code=400)
     
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -31,53 +18,40 @@ async def health_check(
         "X-Content-Type-Options": "nosniff"
     }
     
-    if request.query_params:
-        return Response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            headers=headers
-        )
-    
-    body = await request.body()
-    if body:
-        return Response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            headers=headers
-        )
-
     try:
-
-        db.execute(text("SELECT 1"))
-        
-        health_check_record = HealthCheck()
-        db.add(health_check_record)
-        db.commit()
-        
-        return Response(
-            status_code=status.HTTP_200_OK,
-            headers=headers
+        # Create a fresh connection to test database availability
+        settings = get_settings()
+        test_engine = create_engine(
+            settings.database_url,
+            pool_pre_ping=True,  # Test connection before using
+            pool_size=1,
+            max_overflow=0
         )
         
+        # Try to execute a simple query
+        with test_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            
+            # Insert health check record
+            conn.execute(
+                text("INSERT INTO health_checks (check_datetime) VALUES (NOW())")
+            )
+            conn.commit()
+        
+        test_engine.dispose()
+        return Response(status_code=200, headers=headers)
+    
+    except OperationalError:
+        # Database connection failed
+        raise HTTPException(status_code=503)
     except Exception as e:
-        print(f"Health check failed: {e}")
-        db.rollback()
-        
-        return Response(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            headers=headers
-        )
+        # Any other database error
+        raise HTTPException(status_code=503)
 
-@router.head("/healthz")
 @router.post("/healthz")
 @router.put("/healthz")
-@router.patch("/healthz")
 @router.delete("/healthz")
-async def health_check_not_allowed():
-    """Return 405 for non-GET methods with required headers"""
-    return Response(
-        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "X-Content-Type-Options": "nosniff"
-        }
-    )
+@router.patch("/healthz")
+@router.head("/healthz")
+async def method_not_allowed():
+    raise HTTPException(status_code=405)
