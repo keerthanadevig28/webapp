@@ -2,7 +2,6 @@ import pytest
 import requests
 
 
-# Invalid Input Tests
 def test_creation_with_all_fields_missing(base_url):
     """Negative: All required fields missing"""
     payload = {}
@@ -27,7 +26,6 @@ def test_update_with_readonly_field_returns_400(base_url, create_test_user):
     response, email, password = create_test_user()
     assert response.status_code == 201
     
-    # Try to update username (not allowed)
     payload = {"username": "newemail@example.com"}
     response = requests.put(
         f"{base_url}/v1/user/self",
@@ -42,7 +40,6 @@ def test_update_with_invalid_field_type(base_url, create_test_user):
     response, email, password = create_test_user()
     assert response.status_code == 201
     
-    # Send number instead of string
     payload = {"first_name": 12345}
     response = requests.put(
         f"{base_url}/v1/user/self",

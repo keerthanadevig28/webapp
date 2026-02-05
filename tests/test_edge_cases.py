@@ -4,12 +4,11 @@ import threading
 import time
 
 
-# Boundary Value Tests
 def test_minimum_valid_password_length(base_url, unique_email):
     """Edge: Exactly 8 character password (minimum)"""
     payload = {
         "username": unique_email,
-        "password": "Pass123!",  # Exactly 8 chars
+        "password": "Pass123!",  
         "first_name": "Test",
         "last_name": "User"
     }
@@ -21,7 +20,7 @@ def test_below_minimum_password_length(base_url, unique_email):
     """Edge: 7 character password (below minimum)"""
     payload = {
         "username": unique_email,
-        "password": "Pass12!",  # 7 chars
+        "password": "Pass12!",  
         "first_name": "Test",
         "last_name": "User"
     }
@@ -53,8 +52,6 @@ def test_very_long_names(base_url, unique_email):
     response = requests.post(f"{base_url}/v1/user", json=payload)
     assert response.status_code in [201, 400]
 
-
-# Performance Tests (Basic)
 def test_health_check_response_time(base_url):
     """Performance: Health check responds quickly"""
     start = time.time()
@@ -82,8 +79,6 @@ def test_concurrent_health_checks(base_url):
     assert all(code == 200 for code in results)
     assert len(results) == 5
 
-
-# Data Integrity Tests
 def test_data_persists_correctly(base_url, create_test_user):
     """Data Integrity: Created data persists"""
     response, email, password = create_test_user(
@@ -93,7 +88,6 @@ def test_data_persists_correctly(base_url, create_test_user):
     assert response.status_code == 201
     created_data = response.json()
     
-    # Retrieve and verify
     response2 = requests.get(
         f"{base_url}/v1/user/self",
         auth=(email, password)
@@ -111,15 +105,13 @@ def test_updates_dont_affect_other_fields(base_url, create_test_user):
         last_name="Name"
     )
     original = response.json()
-    
-    # Update only first_name
+
     requests.put(
         f"{base_url}/v1/user/self",
         json={"first_name": "Modified"},
         auth=(email, password)
     )
-    
-    # Verify other fields unchanged
+
     response = requests.get(
         f"{base_url}/v1/user/self",
         auth=(email, password)
