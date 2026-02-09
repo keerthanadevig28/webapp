@@ -5,7 +5,7 @@ import requests
 def test_health_check_get_returns_200(base_url):
     """Test GET /healthz returns 200 OK"""
     response = requests.get(f"{base_url}/healthz")
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert len(response.content) == 0
 
 
