@@ -16,6 +16,21 @@ jobs:
     name: Run Integration Tests
     runs-on: ubuntu-latest
     
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: keerthanadevigovindaraj
+          POSTGRES_PASSWORD: password123
+          POSTGRES_DB: webapp_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,10 +46,45 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov
 
+      - name: Set environment variables
+        run: |
+          echo "DB_HOST=localhost" >> $GITHUB_ENV
+          echo "DB_PORT=5432" >> $GITHUB_ENV
+          echo "DB_NAME=webapp_db" >> $GITHUB_ENV
+          echo "DB_USER=keerthanadevigovindaraj" >> $GITHUB_ENV
+          echo "DB_PASSWORD=password123" >> $GITHUB_ENV
+          echo "APP_HOST=0.0.0.0" >> $GITHUB_ENV
+          echo "APP_PORT=8080" >> $GITHUB_ENV
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -U keerthanadevigovindaraj -d webapp_db && break
+            echo "Waiting for postgres..."
+            sleep 1
+          done
+
+      - name: Start application in background
+        run: |
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8080 > app.log 2>&1 &
+          echo $! > app.pid
+          sleep 5
+
+      - name: Check if app started
+        run: |
+          curl -f http://localhost:8080/healthz || (cat app.log && exit 1)
+
       - name: Run tests
         run: |
           pytest tests/ -v --cov=app
         continue-on-error: false
+
+      - name: Stop application
+        if: always()
+        run: |
+          if [ -f app.pid ]; then
+            kill $(cat app.pid) || true
+          fi
 
   build-artifact:
     name: Build Application Artifact
@@ -45,27 +95,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: Create application artifact
         run: |
-          # Create a clean directory structure
           mkdir -p artifact
-          
-          # Copy application code
           cp -r app artifact/
           cp requirements.txt artifact/
-          cp -r systemd artifact/
-          
-          # Create zip file
+          mkdir -p artifact/systemd
+          cp systemd/webapp.service artifact/systemd/
           cd artifact
           zip -r ../webapp.zip .
           cd ..
-          
-          # Verify zip was created
           ls -lh webapp.zip
 
       - name: Upload artifact
@@ -116,22 +155,6 @@ jobs:
             -only='amazon-ebs.webapp' \
             .
 
-      - name: Get AMI ID
-        id: ami
-        run: |
-          AMI_ID=$(aws ec2 describe-images \
-            --owners self \
-            --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
-            --output text)
-          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
-          echo "Built AMI: $AMI_ID"
-
-      - name: Share AMI with DEMO account
-        run: |
-          aws ec2 modify-image-attribute \
-            --image-id ${{ steps.ami.outputs.ami_id }} \
-            --launch-permission "Add=[{UserId=${{ secrets.AWS_DEMO_ACCOUNT_ID }}}]"
-
   build-gcp-image:
     name: Build GCP Image
     runs-on: ubuntu-latest
@@ -169,26 +192,6 @@ jobs:
           cd packer
           packer build \
             -var "gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
-            -var "gcp_image_project=${{ secrets.GCP_DEMO_PROJECT_ID }}" \
             -var "app_artifact=../webapp.zip" \
             -only='googlecompute.webapp' \
             .
-
-      - name: Get Image Name
-        id: image
-        run: |
-          IMAGE_NAME=$(gcloud compute images list \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --filter="family:webapp" \
-            --sort-by=~creationTimestamp \
-            --limit=1 \
-            --format="value(name)")
-          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
-          echo "Built Image: $IMAGE_NAME"
-
-      - name: Share image with DEMO project
-        run: |
-          gcloud compute images add-iam-policy-binding ${{ steps.image.outputs.image_name }} \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --member="serviceAccount:${{ secrets.GCP_DEMO_PROJECT_ID }}@cloudservices.gserviceaccount.com" \
-            --role="roles/compute.imageUser"
