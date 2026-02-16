@@ -5,6 +5,7 @@ from app.database import init_db
 from app.routes import health, user
 from app.config import get_settings
 from fastapi.exceptions import RequestValidationError
+from app.routes.metadata import router as metadata_router
 
 settings = get_settings()
 
@@ -30,7 +31,7 @@ app = FastAPI(
 
 app.include_router(health.router, tags=["Health"])
 app.include_router(user.router, tags=["User"])
-
+app.include_router(metadata_router, tags=["Metadata"])
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -57,3 +58,5 @@ if __name__ == "__main__":
         port=settings.app_port,
         reload=True  
     )
+
+    
