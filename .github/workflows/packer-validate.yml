@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'packer/**'
+      - 'systemd/**'
       - '.github/workflows/packer-validate.yml'
 
 jobs:
@@ -16,6 +17,29 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Create dummy files for validation
+        run: |
+          # Create dummy webapp.zip in root
+          echo "dummy" > webapp.zip
+          
+          # Create systemd directory and file if not exists
+          mkdir -p systemd
+          if [ ! -f systemd/webapp.service ]; then
+            echo "dummy" > systemd/webapp.service
+          fi
+          
+          # Create packer/scripts directory and file if not exists
+          mkdir -p packer/scripts
+          if [ ! -f packer/scripts/setup.sh ]; then
+            echo "#!/bin/bash" > packer/scripts/setup.sh
+            chmod +x packer/scripts/setup.sh
+          fi
+          
+          # Verify files exist
+          ls -la webapp.zip
+          ls -la systemd/webapp.service
+          ls -la packer/scripts/setup.sh
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@main
@@ -32,23 +56,6 @@ jobs:
           cd packer
           packer fmt -check .
         continue-on-error: false
-
-      - name: Create dummy files for validation
-        run: |
-          # Create dummy webapp.zip
-          touch webapp.zip
-          
-          # Ensure systemd and packer/scripts directories and files exist
-          mkdir -p systemd packer/scripts
-          
-          # Create dummy files if they don't exist
-          if [ ! -f systemd/webapp.service ]; then
-            touch systemd/webapp.service
-          fi
-          
-          if [ ! -f packer/scripts/setup.sh ]; then
-            touch packer/scripts/setup.sh
-          fi
 
       - name: Validate Packer template
         run: |
