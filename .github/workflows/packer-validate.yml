@@ -35,15 +35,27 @@ jobs:
 
       - name: Create dummy files for validation
         run: |
-          # Create dummy webapp.zip for validation
+          # Create dummy webapp.zip
           touch webapp.zip
+          
+          # Ensure systemd and packer/scripts directories and files exist
+          mkdir -p systemd packer/scripts
+          
+          # Create dummy files if they don't exist
+          if [ ! -f systemd/webapp.service ]; then
+            touch systemd/webapp.service
+          fi
+          
+          if [ ! -f packer/scripts/setup.sh ]; then
+            touch packer/scripts/setup.sh
+          fi
 
       - name: Validate Packer template
         run: |
           cd packer
           packer validate \
             -var "aws_region=us-east-1" \
-            -var "gcp_project_id=csye6225-dev-487102" \
+            -var "gcp_project_id=dummy-project" \
             -var "gcp_image_project=[]" \
             -var "aws_ami_users=[]" \
             -var "app_artifact=../webapp.zip" \

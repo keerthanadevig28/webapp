@@ -1,4 +1,3 @@
-
 packer {
   required_plugins {
     amazon = {
@@ -47,7 +46,6 @@ source "googlecompute" "webapp" {
   image_family        = "webapp"
   disk_size           = 25
   disk_type           = "pd-balanced"
-  image_project_id    = [var.gcp_image_project]
 }
 
 build {
