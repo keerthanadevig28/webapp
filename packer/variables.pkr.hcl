@@ -1,4 +1,3 @@
-
 variable "aws_region" {
   type    = string
   default = "us-east-1"
@@ -45,8 +44,8 @@ variable "gcp_ssh_username" {
 }
 
 variable "gcp_image_project" {
-  type    = string
-  default = ""
+  type    = list(string)
+  default = []
 }
 
 variable "app_artifact" {
