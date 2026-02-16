@@ -60,12 +60,12 @@ build {
   }
 
   provisioner "file" {
-    source      = "systemd/webapp.service"
+    source      = "../systemd/webapp.service"
     destination = "/tmp/webapp.service"
   }
 
   provisioner "shell" {
-    script = "packer/scripts/setup.sh"
+    script = "scripts/setup.sh"
   }
 
   provisioner "shell" {
