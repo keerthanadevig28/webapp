@@ -41,5 +41,3 @@ echo "=== Creating virtual environment ==="
 sudo -u csye6225 python3.12 -m venv /opt/webapp/venv
 
 echo "=== Setup script completed ==="
-
-chmod +x packer/scripts/setup.sh
