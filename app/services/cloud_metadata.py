@@ -10,7 +10,7 @@ class CloudMetadataService:
 
     GCP_METADATA_URL = "http://metadata.google.internal/computeMetadata/v1"
     AWS_METADATA_URL = "http://169.254.169.254/latest/meta-data"
-    TIMEOUT = 2  # seconds
+    TIMEOUT = 2  
 
     def __init__(self):
         self.platform = None
@@ -18,7 +18,6 @@ class CloudMetadataService:
 
     def _detect_platform(self) -> None:
         """Detect which cloud platform we're running on at startup"""
-        # Try GCP first
         try:
             response = requests.get(
                 f"{self.GCP_METADATA_URL}/",
@@ -32,7 +31,6 @@ class CloudMetadataService:
         except (requests.exceptions.RequestException, requests.exceptions.Timeout):
             pass
 
-        # Try AWS
         try:
             response = requests.get(
                 f"{self.AWS_METADATA_URL}/",
@@ -105,7 +103,6 @@ class CloudMetadataService:
                 network_full = self._gcp_get(f"{base_path}/network", headers)
                 network = network_full.split('/')[-1] if network_full else None
 
-                # FIX: return None instead of empty string if no public IP
                 try:
                     public_ip = self._gcp_get(
                         f"{base_path}/access-configs/0/external-ip", headers
@@ -121,7 +118,6 @@ class CloudMetadataService:
 
                 index += 1
             except Exception:
-                # No more interfaces
                 break
 
         return interfaces
@@ -167,12 +163,10 @@ class CloudMetadataService:
                 mac_base = f"network/interfaces/macs/{mac}"
 
                 private_ips_text = self._aws_get(f"{mac_base}/local-ipv4s")
-                # FIX: use 'or None' to handle empty string case
                 private_ip = private_ips_text.split('\n')[0].strip() or None
 
                 vpc_id = self._aws_get(f"{mac_base}/vpc-id")
 
-                # FIX: return None instead of empty string if no public IP
                 try:
                     public_ips_text = self._aws_get(f"{mac_base}/public-ipv4s")
                     public_ip = public_ips_text.split('\n')[0].strip() or None

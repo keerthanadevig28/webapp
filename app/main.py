@@ -11,8 +11,10 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-  
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        print(f"Warning; Database initialization failed: {e}")
     print(f"Application started on {settings.app_host}:{settings.app_port}")
     yield
     
