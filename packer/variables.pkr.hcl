@@ -57,21 +57,3 @@ variable "gcp_demo_project_id" {
   type    = string
   default = ""
 }
-
-source "googlecompute" "webapp" {
-  project_id          = var.gcp_project_id
-  source_image_family = var.gcp_source_image_family
-  ssh_username        = var.gcp_ssh_username
-  zone                = var.gcp_zone
-  image_name          = "webapp-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
-  image_family        = "webapp"
-  disk_size           = 25
-  disk_type           = "pd-balanced"
-
-  # Share image with DEMO project
-  image_licenses = []
-  account_file   = "" # uses Application Default Credentials (GitHub Actions)
-
-  # Grant DEMO project compute image user access
-  image_storage_locations = ["us"]
-}
