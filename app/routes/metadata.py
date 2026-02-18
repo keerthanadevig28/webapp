@@ -7,7 +7,6 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Initialize the cloud metadata service once at module load
 cloud_service = CloudMetadataService()
 
 CACHE_HEADERS = {
@@ -36,16 +35,13 @@ async def get_metadata(request: Request):
     """
     path = "/v1/metadata"
 
-    # Check for request body
     body = await request.body()
     if body:
         return error_response(400, "Bad Request", "Request body is not allowed for this endpoint", path)
 
-    # Check for query parameters
     if request.query_params:
         return error_response(400, "Bad Request", "Query parameters are not allowed for this endpoint", path)
 
-    # Check if running on a supported cloud platform
     if not cloud_service.is_cloud_platform_detected():
         return error_response(503, "Service Unavailable", "Not running on a supported cloud platform (AWS or GCP)", path)
 

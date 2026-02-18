@@ -57,3 +57,5 @@ variable "gcp_demo_project_id" {
   type    = string
   default = ""
 }
+
+# Packer template for webapp
