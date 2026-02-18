@@ -4,49 +4,29 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'packer/**'
-      - 'systemd/**'
-      - '.github/workflows/packer-validate.yml'
 
 jobs:
   validate:
     name: Validate Packer Template
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Create dummy files for validation
         run: |
-          # Create dummy webapp.zip in root
           echo "dummy" > webapp.zip
-          
-          # Ensure systemd directory exists and create file if missing
           mkdir -p systemd
           if [ ! -f systemd/webapp.service ]; then
             echo "[Unit]" > systemd/webapp.service
             echo "Description=Dummy" >> systemd/webapp.service
           fi
-          
-          # Ensure packer/scripts directory exists and create file if missing
           mkdir -p packer/scripts
           if [ ! -f packer/scripts/setup.sh ]; then
             echo "#!/bin/bash" > packer/scripts/setup.sh
             echo "echo dummy" >> packer/scripts/setup.sh
             chmod +x packer/scripts/setup.sh
           fi
-          
-          # List files to verify
-          echo "=== Checking files exist ==="
-          ls -la webapp.zip || echo "webapp.zip missing!"
-          ls -la systemd/webapp.service || echo "systemd/webapp.service missing!"
-          ls -la packer/scripts/setup.sh || echo "packer/scripts/setup.sh missing!"
-          
-          echo "=== Current directory structure ==="
-          pwd
-          find . -name "webapp.service" -o -name "setup.sh" -o -name "webapp.zip"
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@main
@@ -66,13 +46,7 @@ jobs:
 
       - name: Validate Packer template
         run: |
-          echo "=== Running from directory: $(pwd) ==="
-          echo "=== Checking files from packer directory ==="
           cd packer
-          ls -la ../webapp.zip || echo "webapp.zip not found"
-          ls -la ../systemd/webapp.service || echo "webapp.service not found"
-          ls -la scripts/setup.sh || echo "setup.sh not found"
-          
           packer validate \
             -var "aws_region=us-east-1" \
             -var "gcp_project_id=dummy-project" \
