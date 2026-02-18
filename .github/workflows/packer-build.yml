@@ -4,18 +4,12 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'app/**'
-      - 'packer/**'
-      - 'systemd/**'
-      - 'requirements.txt'
-      - '.github/workflows/packer-build.yml'
 
 jobs:
   test:
     name: Run Integration Tests
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:14
@@ -30,7 +24,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -90,7 +84,7 @@ jobs:
     name: Build Application Artifact
     runs-on: ubuntu-latest
     needs: test
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -118,7 +112,7 @@ jobs:
     name: Build AWS AMI
     runs-on: ubuntu-latest
     needs: build-artifact
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -159,7 +153,7 @@ jobs:
     name: Build GCP Image
     runs-on: ubuntu-latest
     needs: build-artifact
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -195,3 +189,29 @@ jobs:
             -var "app_artifact=../webapp.zip" \
             -only='googlecompute.webapp' \
             .
+
+      - name: Share GCP Image with DEMO project
+        run: |
+          # Get the most recently built webapp image name
+          IMAGE_NAME=$(gcloud compute images list \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --filter="family=webapp" \
+            --sort-by="~creationTimestamp" \
+            --limit=1 \
+            --format="value(name)")
+
+          echo "Sharing image: $IMAGE_NAME with DEMO project"
+
+          # Get DEMO project number
+          DEMO_PROJECT_NUMBER=$(gcloud projects describe ${{ secrets.GCP_DEMO_PROJECT_ID }} \
+            --format="value(projectNumber)")
+
+          echo "DEMO project number: $DEMO_PROJECT_NUMBER"
+
+          # Grant compute image user role to DEMO project's default compute service account
+          gcloud compute images add-iam-policy-binding $IMAGE_NAME \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --member="serviceAccount:${DEMO_PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+            --role="roles/compute.imageUser"
+
+          echo "Image $IMAGE_NAME successfully shared with DEMO project"

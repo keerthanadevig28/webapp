@@ -52,3 +52,8 @@ variable "app_artifact" {
   type    = string
   default = "webapp.zip"
 }
+
+variable "gcp_demo_project_id" {
+  type    = string
+  default = ""
+}
