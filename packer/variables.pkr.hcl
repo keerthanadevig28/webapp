@@ -56,4 +56,4 @@ variable "app_artifact" {
 variable "gcp_demo_project_id" {
   type    = string
   default = ""
-}# Packer template for webapp
+} # Packer template for webapp
