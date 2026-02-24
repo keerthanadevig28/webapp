@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +8,7 @@ from uuid import UUID
 from app.database import get_db
 from app.auth import get_current_user
 from app.models import User, Course
+from app.errors import error_response
 from app.schemas import (
     CourseCreateRequest, CourseResponse,
     COURSE_IMMUTABLE_FIELDS, COURSE_UPDATABLE_FIELDS, COURSE_READONLY_FIELDS,
@@ -18,55 +19,55 @@ router = APIRouter(prefix="/v1/courses", tags=["Courses"])
 
 
 def validate_content_type(request: Request):
-    """Ensure Content-Type is application/json for POST/PUT."""
     ct = request.headers.get("content-type", "")
     if "application/json" not in ct:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Content-Type must be application/json"
-        )
+        return error_response(415, "Unsupported Media Type", "Content-Type must be application/json", request.url.path)
+    return None
 
 
 # ─── GET /v1/courses ───
-@router.get("", response_model=list[CourseResponse])
+@router.get("")
 def list_courses(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     courses = db.query(Course).order_by(Course.department_code.asc(), Course.number.asc()).all()
-    return [CourseResponse.model_validate(c) for c in courses]
+    return [CourseResponse.model_validate(c).model_dump(mode="json") for c in courses]
 
 
 # ─── POST /v1/courses ───
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("")
 async def create_course(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    validate_content_type(request)
+    path = request.url.path
+
+    # Check content type
+    ct_error = validate_content_type(request)
+    if ct_error:
+        return ct_error
 
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON body")
+        return error_response(400, "Bad Request", "Invalid or malformed JSON body", path)
 
     if not body or not isinstance(body, dict):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request body is required")
+        return error_response(400, "Bad Request", "Request body is required", path)
 
     # Reject readonly fields sent by client
     for field in COURSE_READONLY_FIELDS:
         if field in body:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Field '{field}' cannot be set by the client"
-            )
+            return error_response(400, "Bad Request", f"Field '{field}' cannot be set by the client", path)
 
     # Validate with Pydantic schema
     try:
         course_data = CourseCreateRequest(**body)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        return error_response(400, "Validation Error", str(e), path)
 
     now = datetime.now(timezone.utc)
     course = Course(
@@ -88,13 +89,14 @@ async def create_course(
         db.refresh(course)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Course with department_code '{course_data.department_code}' and number '{course_data.number}' already exists"
+        return error_response(
+            409, "Conflict",
+            f"Course {course_data.department_code} {course_data.number} already exists",
+            path
         )
 
     response = JSONResponse(
-        status_code=status.HTTP_201_CREATED,
+        status_code=201,
         content=CourseResponse.model_validate(course).model_dump(mode="json"),
     )
     response.headers["Location"] = f"/v1/courses/{course.id}"
@@ -102,89 +104,85 @@ async def create_course(
 
 
 # ─── GET /v1/courses/{course_id} ───
-@router.get("/{course_id}", response_model=CourseResponse)
+@router.get("/{course_id}")
 def get_course(
     course_id: UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
-    return CourseResponse.model_validate(course)
+        return error_response(404, "Not Found", "Course not found", request.url.path)
+    return CourseResponse.model_validate(course).model_dump(mode="json")
 
 
 # ─── PUT /v1/courses/{course_id} ───
-@router.put("/{course_id}", response_model=CourseResponse)
+@router.put("/{course_id}")
 async def update_course(
     course_id: UUID,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    validate_content_type(request)
+    path = request.url.path
+
+    ct_error = validate_content_type(request)
+    if ct_error:
+        return ct_error
 
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+        return error_response(404, "Not Found", "Course not found", path)
 
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON body")
+        return error_response(400, "Bad Request", "Invalid or malformed JSON body", path)
 
     if not body or not isinstance(body, dict):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request body cannot be empty")
+        return error_response(400, "Bad Request", "Request body cannot be empty", path)
 
     # Check for immutable fields
     for field in body:
         if field in COURSE_IMMUTABLE_FIELDS:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Field '{field}' is immutable and cannot be updated"
-            )
+            return error_response(400, "Bad Request", f"Field '{field}' cannot be updated", path)
 
     # Check at least one updatable field
     updatable_provided = {k: v for k, v in body.items() if k in COURSE_UPDATABLE_FIELDS}
     if not updatable_provided:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one updatable field must be provided"
-        )
+        return error_response(400, "Bad Request", "At least one updatable field must be provided", path)
 
     # Check for unknown fields
     unknown = set(body.keys()) - COURSE_UPDATABLE_FIELDS
     if unknown:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown field(s): {', '.join(unknown)}"
-        )
+        return error_response(400, "Bad Request", f"Unknown field(s): {', '.join(unknown)}", path)
 
     # Validate individual fields
     if "title" in updatable_provided:
         v = updatable_provided["title"]
         if not isinstance(v, str) or not (1 <= len(v) <= 255):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title must be 1-255 characters")
+            return error_response(400, "Validation Error", "title must be 1-255 characters", path)
 
     if "credit_hours" in updatable_provided:
         v = updatable_provided["credit_hours"]
         if not isinstance(v, int) or not (1 <= v <= 8):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="credit_hours must be between 1 and 8")
+            return error_response(400, "Validation Error", "credit_hours must be between 1 and 8", path)
 
     if "classification" in updatable_provided:
         v = updatable_provided["classification"]
         if v not in VALID_CLASSIFICATIONS:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="classification must be 'core' or 'elective'")
+            return error_response(400, "Validation Error", "classification must be 'core' or 'elective'", path)
 
     if "description" in updatable_provided:
         v = updatable_provided["description"]
         if v is not None and (not isinstance(v, str) or len(v) > 2000):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="description must be at most 2000 characters")
+            return error_response(400, "Validation Error", "description must be at most 2000 characters", path)
 
     if "prerequisites" in updatable_provided:
         v = updatable_provided["prerequisites"]
         if v is not None and (not isinstance(v, str) or len(v) > 512):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="prerequisites must be at most 512 characters")
+            return error_response(400, "Validation Error", "prerequisites must be at most 512 characters", path)
 
     # Apply updates
     for field, value in updatable_provided.items():
@@ -195,26 +193,29 @@ async def update_course(
     db.commit()
     db.refresh(course)
 
-    return CourseResponse.model_validate(course)
+    return CourseResponse.model_validate(course).model_dump(mode="json")
 
 
 # ─── DELETE /v1/courses/{course_id} ───
-@router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{course_id}")
 def delete_course(
     course_id: UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    path = request.url.path
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+        return error_response(404, "Not Found", "Course not found", path)
 
     if course.has_syllabus:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot delete course with an attached syllabus. Delete the syllabus first."
+        return error_response(
+            409, "Conflict",
+            f"Cannot delete course {course.department_code} {course.number} because it has a syllabus attached. Delete the syllabus first.",
+            path
         )
 
     db.delete(course)
     db.commit()
-    return None
+    return JSONResponse(status_code=204, content=None)
