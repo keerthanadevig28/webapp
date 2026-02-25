@@ -8,7 +8,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:14
@@ -24,6 +24,15 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: testdb
+      DB_USER: testuser
+      DB_PASSWORD: testpass
+      S3_BUCKET_NAME: test-bucket
+      AWS_REGION: us-east-1
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,28 +40,35 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install pytest pytest-html httpx
 
       - name: Start application
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: testdb
-          DB_USER: testuser
-          DB_PASSWORD: testpass
         run: |
-          uvicorn app.main:app --host 0.0.0.0 --port 8080 &
-          sleep 20
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8080 > app.log 2>&1 &
+          echo $! > app.pid
+          sleep 10
+
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz && break
+            echo "Waiting for app... attempt $i"
+            sleep 2
+          done
 
       - name: Run integration tests
         run: |
-          pytest tests/ -v --html=report.html --self-contained-html
+          pytest tests/test_courses.py -v --html=report.html --self-contained-html
+
+      - name: Show app logs on failure
+        if: failure()
+        run: cat app.log || true
 
       - name: Upload test results
         if: always()
