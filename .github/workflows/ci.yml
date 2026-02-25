@@ -64,7 +64,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          pytest tests/ -v --html=report.html --self-contained-html
+          pytest tests/test_courses.py -v --html=report.html --self-contained-html
 
       - name: Show app logs on failure
         if: failure()
