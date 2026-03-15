@@ -44,7 +44,13 @@ def create_test_user(verified=True):
 @pytest.fixture(autouse=True)
 def setup_db():
     """Reset database before each test."""
+    from app.models import Course, Syllabus
     Base.metadata.create_all(bind=engine)
+    db = next(get_db())
+    db.query(Syllabus).delete()
+    db.query(Course).delete()
+    db.commit()
+    db.close()
     create_test_user(verified=True)
     yield
 
