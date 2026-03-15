@@ -44,11 +44,15 @@ def create_test_user(verified=True):
 @pytest.fixture(autouse=True)
 def setup_db():
     """Reset database before each test."""
-    Base.metadata.drop_all(bind=engine)
+    from app.models import Course, Syllabus
     Base.metadata.create_all(bind=engine)
+    db = next(get_db())
+    db.query(Syllabus).delete()
+    db.query(Course).delete()
+    db.commit()
+    db.close()
     create_test_user(verified=True)
     yield
-    Base.metadata.drop_all(bind=engine)
 
 
 VALID_COURSE = {
@@ -114,10 +118,21 @@ class TestCreateCourse:
 
     def test_unverified_user_403(self):
         """Test that unverified users get 403."""
-        Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
-        create_test_user(verified=False)
+        from app.models import User
+        from app.database import get_db
+        db = next(get_db())
+        user = db.query(User).filter(User.email == TEST_USER_EMAIL).first()
+        if user:
+            user.verified = False
+            db.commit()
+        db.close()
         r = client.post("/v1/courses", json=VALID_COURSE, headers=auth_header())
+        db = next(get_db())
+        user = db.query(User).filter(User.email == TEST_USER_EMAIL).first()
+        if user:
+            user.verified = True
+            db.commit()
+        db.close()
         assert r.status_code == 403
 
 
