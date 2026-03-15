@@ -9,6 +9,8 @@ from app.database import get_db
 from app.auth import get_current_user
 from app.models import User, Course
 from app.errors import error_response
+from app.logger import logger
+from app.metrics import count, timed
 from app.schemas import (
     CourseCreateRequest, CourseResponse,
     COURSE_IMMUTABLE_FIELDS, COURSE_UPDATABLE_FIELDS, COURSE_READONLY_FIELDS,
@@ -32,7 +34,16 @@ def list_courses(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    courses = db.query(Course).order_by(Course.department_code.asc(), Course.number.asc()).all()
+    count("api.list_courses")
+    logger.info("GET /v1/courses called", extra={"user": current_user.email})
+
+    with timed("api.list_courses.time"):
+        with timed("db.list_courses"):
+            courses = db.query(Course).order_by(
+                Course.department_code.asc(), Course.number.asc()
+            ).all()
+
+    logger.info("Courses retrieved successfully", extra={"count": len(courses)})
     return [CourseResponse.model_validate(c).model_dump(mode="json") for c in courses]
 
 
@@ -43,30 +54,32 @@ async def create_course(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    count("api.create_course")
+    logger.info("POST /v1/courses called", extra={"user": current_user.email})
     path = request.url.path
 
-    # Check content type
     ct_error = validate_content_type(request)
     if ct_error:
+        logger.warning("Invalid content type on POST /v1/courses")
         return ct_error
 
     try:
         body = await request.json()
     except Exception:
+        logger.warning("Invalid JSON body on POST /v1/courses")
         return error_response(400, "Bad Request", "Invalid or malformed JSON body", path)
 
     if not body or not isinstance(body, dict):
         return error_response(400, "Bad Request", "Request body is required", path)
 
-    # Reject readonly fields sent by client
     for field in COURSE_READONLY_FIELDS:
         if field in body:
             return error_response(400, "Bad Request", f"Field '{field}' cannot be set by the client", path)
 
-    # Validate with Pydantic schema
     try:
         course_data = CourseCreateRequest(**body)
     except Exception as e:
+        logger.warning("Course validation failed", extra={"error": str(e)})
         return error_response(400, "Validation Error", str(e), path)
 
     now = datetime.now(timezone.utc)
@@ -84,17 +97,21 @@ async def create_course(
     )
 
     try:
-        db.add(course)
-        db.commit()
-        db.refresh(course)
+        with timed("db.create_course"):
+            db.add(course)
+            db.commit()
+            db.refresh(course)
     except IntegrityError:
         db.rollback()
+        logger.warning("Duplicate course creation attempted",
+                       extra={"department_code": course_data.department_code, "number": course_data.number})
         return error_response(
             409, "Conflict",
             f"Course {course_data.department_code} {course_data.number} already exists",
             path
         )
 
+    logger.info("Course created successfully", extra={"course_id": str(course.id)})
     response = JSONResponse(
         status_code=201,
         content=CourseResponse.model_validate(course).model_dump(mode="json"),
@@ -111,9 +128,18 @@ def get_course(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    course = db.query(Course).filter(Course.id == course_id).first()
+    count("api.get_course")
+    logger.info("GET /v1/courses/{} called".format(course_id), extra={"user": current_user.email})
+
+    with timed("api.get_course.time"):
+        with timed("db.get_course"):
+            course = db.query(Course).filter(Course.id == course_id).first()
+
     if not course:
+        logger.warning("Course not found", extra={"course_id": str(course_id)})
         return error_response(404, "Not Found", "Course not found", request.url.path)
+
+    logger.info("Course retrieved successfully", extra={"course_id": str(course_id)})
     return CourseResponse.model_validate(course).model_dump(mode="json")
 
 
@@ -125,40 +151,42 @@ async def update_course(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    count("api.update_course")
+    logger.info("PUT /v1/courses/{} called".format(course_id), extra={"user": current_user.email})
     path = request.url.path
 
     ct_error = validate_content_type(request)
     if ct_error:
+        logger.warning("Invalid content type on PUT /v1/courses/{}".format(course_id))
         return ct_error
 
-    course = db.query(Course).filter(Course.id == course_id).first()
+    with timed("db.get_course_for_update"):
+        course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
+        logger.warning("Course not found for update", extra={"course_id": str(course_id)})
         return error_response(404, "Not Found", "Course not found", path)
 
     try:
         body = await request.json()
     except Exception:
+        logger.warning("Invalid JSON body on PUT /v1/courses/{}".format(course_id))
         return error_response(400, "Bad Request", "Invalid or malformed JSON body", path)
 
     if not body or not isinstance(body, dict):
         return error_response(400, "Bad Request", "Request body cannot be empty", path)
 
-    # Check for immutable fields
     for field in body:
         if field in COURSE_IMMUTABLE_FIELDS:
             return error_response(400, "Bad Request", f"Field '{field}' cannot be updated", path)
 
-    # Check at least one updatable field
     updatable_provided = {k: v for k, v in body.items() if k in COURSE_UPDATABLE_FIELDS}
     if not updatable_provided:
         return error_response(400, "Bad Request", "At least one updatable field must be provided", path)
 
-    # Check for unknown fields
     unknown = set(body.keys()) - COURSE_UPDATABLE_FIELDS
     if unknown:
         return error_response(400, "Bad Request", f"Unknown field(s): {', '.join(unknown)}", path)
 
-    # Validate individual fields
     if "title" in updatable_provided:
         v = updatable_provided["title"]
         if not isinstance(v, str) or not (1 <= len(v) <= 255):
@@ -184,15 +212,14 @@ async def update_course(
         if v is not None and (not isinstance(v, str) or len(v) > 512):
             return error_response(400, "Validation Error", "prerequisites must be at most 512 characters", path)
 
-    # Apply updates
-    for field, value in updatable_provided.items():
-        setattr(course, field, value)
+    with timed("db.update_course"):
+        for field, value in updatable_provided.items():
+            setattr(course, field, value)
+        course.date_updated = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(course)
 
-    course.date_updated = datetime.now(timezone.utc)
-
-    db.commit()
-    db.refresh(course)
-
+    logger.info("Course updated successfully", extra={"course_id": str(course_id)})
     return CourseResponse.model_validate(course).model_dump(mode="json")
 
 
@@ -204,18 +231,29 @@ def delete_course(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    count("api.delete_course")
+    logger.info("DELETE /v1/courses/{} called".format(course_id), extra={"user": current_user.email})
     path = request.url.path
-    course = db.query(Course).filter(Course.id == course_id).first()
+
+    with timed("api.delete_course.time"):
+        with timed("db.get_course_for_delete"):
+            course = db.query(Course).filter(Course.id == course_id).first()
+
     if not course:
+        logger.warning("Course not found for deletion", extra={"course_id": str(course_id)})
         return error_response(404, "Not Found", "Course not found", path)
 
     if course.has_syllabus:
+        logger.warning("Cannot delete course with syllabus", extra={"course_id": str(course_id)})
         return error_response(
             409, "Conflict",
             f"Cannot delete course {course.department_code} {course.number} because it has a syllabus attached. Delete the syllabus first.",
             path
         )
 
-    db.delete(course)
-    db.commit()
+    with timed("db.delete_course"):
+        db.delete(course)
+        db.commit()
+
+    logger.info("Course deleted successfully", extra={"course_id": str(course_id)})
     return JSONResponse(status_code=204, content=None)

@@ -64,6 +64,12 @@ build {
     destination = "/tmp/webapp.service"
   }
 
+  # Copy CloudWatch agent config
+  provisioner "file" {
+    source      = "cloudwatch-config.json"
+    destination = "/tmp/cloudwatch-config.json"
+  }
+
   provisioner "shell" {
     script = "scripts/setup.sh"
   }
@@ -84,6 +90,28 @@ build {
       "sudo chmod 644 /etc/systemd/system/webapp.service",
       "sudo systemctl daemon-reload",
       "sudo systemctl enable webapp.service"
+    ]
+  }
+
+  # Install CloudWatch Agent
+  provisioner "shell" {
+    inline = [
+      "wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb",
+      "sudo dpkg -i amazon-cloudwatch-agent.deb",
+      "rm amazon-cloudwatch-agent.deb",
+      "sudo mkdir -p /var/log/webapp",
+      "sudo chown csye6225:csye6225 /var/log/webapp",
+      "sudo chmod 755 /var/log/webapp"
+    ]
+  }
+
+  # Move CloudWatch config into place and enable agent
+  provisioner "shell" {
+    inline = [
+      "sudo mv /tmp/cloudwatch-config.json /opt/aws/amazon-cloudwatch-agent/etc/cloudwatch-config.json",
+      "sudo chown root:root /opt/aws/amazon-cloudwatch-agent/etc/cloudwatch-config.json",
+      "sudo chmod 644 /opt/aws/amazon-cloudwatch-agent/etc/cloudwatch-config.json",
+      "sudo systemctl enable amazon-cloudwatch-agent"
     ]
   }
 
