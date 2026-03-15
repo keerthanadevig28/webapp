@@ -32,6 +32,8 @@ jobs:
       DB_PASSWORD: testpass
       S3_BUCKET_NAME: test-bucket
       AWS_REGION: us-east-1
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
 
     steps:
       - name: Checkout code
@@ -46,25 +48,37 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-html httpx
+          pip install pytest pytest-html pytest-cov httpx
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          for i in $(seq 1 30); do
+            pg_isready -h localhost -p 5432 -U testuser && break
+            echo "Waiting for PostgreSQL... attempt $i"
+            sleep 2
+          done
 
       - name: Start application
         run: |
           nohup uvicorn app.main:app --host 0.0.0.0 --port 8080 > app.log 2>&1 &
           echo $! > app.pid
-          sleep 10
+          sleep 15
 
       - name: Wait for app to be ready
         run: |
           for i in $(seq 1 30); do
-            curl -sf http://localhost:8080/healthz && break
-            echo "Waiting for app... attempt $i"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/healthz)
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
+              echo "App is responding with status $STATUS"
+              break
+            fi
+            echo "Waiting for app... attempt $i (status: $STATUS)"
             sleep 2
           done
 
-      - name: Run integration tests
+      - name: Run all integration tests
         run: |
-          pytest tests/test_courses.py -v --html=report.html --self-contained-html
+          pytest tests/ -v --cov=app
 
       - name: Show app logs on failure
         if: failure()
@@ -75,4 +89,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: report.html
+          path: app.log
