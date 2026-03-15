@@ -52,3 +52,7 @@ def init_db():
     import app.models as models
     Base.metadata.create_all(bind=get_engine())
     print("Database initialized successfully")
+
+
+# Backward compatibility — tests import 'engine' directly
+engine = get_engine()
