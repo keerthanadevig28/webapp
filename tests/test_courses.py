@@ -121,6 +121,12 @@ class TestCreateCourse:
             db.commit()
         db.close()
         r = client.post("/v1/courses", json=VALID_COURSE, headers=auth_header())
+        db = next(get_db())
+        user = db.query(User).filter(User.email == TEST_USER_EMAIL).first()
+        if user:
+            user.verified = True
+            db.commit()
+        db.close()
         assert r.status_code == 403
 
 

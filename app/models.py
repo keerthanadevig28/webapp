@@ -17,7 +17,7 @@ class User(Base):
     password = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    verified = Column(Boolean, nullable=False, default=False)
+    verified = Column(Boolean, nullable=False, default=True)
     account_created = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     account_updated = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
