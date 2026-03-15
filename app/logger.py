@@ -4,8 +4,15 @@ from pythonjsonlogger import jsonlogger
 
 
 def setup_logger():
-    # Create log directory if it doesn't exist
-    os.makedirs("/var/log/webapp", exist_ok=True)
+    # Use /var/log/webapp in production (EC2), fall back to local logs/ in CI/dev
+    log_dir = "/var/log/webapp"
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except PermissionError:
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+    log_file = os.path.join(log_dir, "app.log")
 
     logger = logging.getLogger("webapp")
     logger.setLevel(logging.DEBUG)
@@ -15,10 +22,10 @@ def setup_logger():
         return logger
 
     # File handler — this is what CloudWatch Agent reads
-    file_handler = logging.FileHandler("/var/log/webapp/app.log")
+    file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
 
-    # Console handler — for local dev
+    # Console handler — for local dev and CI
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.DEBUG)
 
