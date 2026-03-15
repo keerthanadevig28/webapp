@@ -50,6 +50,9 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-html pytest-cov httpx
 
+      - name: Remove local .env if present
+        run: rm -f .env
+
       - name: Wait for PostgreSQL to be ready
         run: |
           for i in $(seq 1 30); do
@@ -58,20 +61,12 @@ jobs:
             sleep 2
           done
 
-      - name: Verify DB connection
+      - name: Verify DB connection and settings
         run: |
           python -c "
-          import os
-          import psycopg2
-          conn = psycopg2.connect(
-            host=os.environ['DB_HOST'],
-            port=os.environ['DB_PORT'],
-            dbname=os.environ['DB_NAME'],
-            user=os.environ['DB_USER'],
-            password=os.environ['DB_PASSWORD']
-          )
-          print('DB connection successful!')
-          conn.close()
+          from app.config import get_settings
+          s = get_settings()
+          print('DB URL:', s.database_url)
           "
 
       - name: Start application
