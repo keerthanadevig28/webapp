@@ -9,6 +9,7 @@ from app.routes.syllabus import router as syllabus_router
 from app.config import get_settings
 from app.errors import error_response
 from app.auth import AuthError
+from app.logger import logger
 from fastapi.exceptions import RequestValidationError
 
 settings = get_settings()
@@ -18,11 +19,12 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     try:
         init_db()
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"Warning; Database initialization failed: {e}")
-    print(f"Application started on {settings.app_host}:{settings.app_port}")
+        logger.error("Database initialization failed", extra={"error": str(e)}, exc_info=True)
+    logger.info("Application started", extra={"host": settings.app_host, "port": settings.app_port})
     yield
-    print("Application shutting down")
+    logger.info("Application shutting down")
 
 
 app = FastAPI(
@@ -44,17 +46,19 @@ app.include_router(syllabus_router)
 @app.exception_handler(AuthError)
 async def auth_error_handler(request: Request, exc: AuthError):
     """Handle custom auth errors — returns the pre-built JSONResponse."""
+    logger.warning("Authentication error", extra={"path": request.url.path})
     return exc.response
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    print(f"Unexpected error: {exc}")
+    logger.error("Unexpected error", extra={"path": request.url.path, "error": str(exc)}, exc_info=True)
     return error_response(500, "Internal Server Error", "An unexpected error occurred", request.url.path)
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning("Request validation failed", extra={"path": request.url.path, "error": str(exc)})
     return error_response(400, "Bad Request", "Request validation failed", request.url.path)
 
 
