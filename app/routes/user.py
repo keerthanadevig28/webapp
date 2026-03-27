@@ -9,6 +9,11 @@ from app.auth import hash_password, get_current_user
 from app.logger import logger
 from app.metrics import count, timed
 
+import boto3
+import uuid
+from datetime import datetime, timezone, timedelta
+from app.config import get_settings
+
 router = APIRouter()
 
 @router.post("/v1/user", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
@@ -26,11 +31,17 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db)):
                 detail="User with this email already exists"
             )
         hashed_password = hash_password(user_data.password)
+        token = str(uuid.uuid4())                                          
+        token_expiry = datetime.now(timezone.utc) + timedelta(minutes=2)
+
         new_user = User(
             email=user_data.username,
             password=hashed_password,
             first_name=user_data.first_name,
-            last_name=user_data.last_name
+            last_name=user_data.last_name,
+            verified=False,                   # ← ADD
+            verification_token=token,         # ← ADD
+            token_expiry=token_expiry         # ← ADD
         )
         try:
             with timed("db.create_user"):
@@ -38,6 +49,21 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db)):
                 db.commit()
                 db.refresh(new_user)
             logger.info("User created successfully", extra={"email": user_data.username})
+
+            try:                                                            # ← ADD
+                settings = get_settings()                                   # ← ADD
+                sns = boto3.client("sns", region_name=settings.aws_region)  # ← ADD
+                sns.publish(                                                 # ← ADD
+                    TopicArn=settings.sns_topic_arn,                        # ← ADD
+                    Message=json.dumps({                                    # ← ADD
+                        "email": new_user.email,                            # ← ADD
+                        "firstName": new_user.first_name,                   # ← ADD
+                        "token": token                                      # ← ADD
+                    })                                                      # ← ADD
+                )          
+                logger.info("SNS message published", extra={"email": new_user.email})  # ← ADD
+            except Exception as sns_err:                                    # ← ADD
+                logger.error("SNS publish failed", extra={"error": str(sns_err)})
             return new_user
         except IntegrityError:
             db.rollback()
@@ -94,3 +120,30 @@ def update_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to update user"
             )
+        
+
+@router.get("/v1/user/verify-email", status_code=status.HTTP_200_OK)
+def verify_email(email: str, token: str, db: Session = Depends(get_db)):
+    logger.info("GET /v1/user/verify-email called", extra={"email": email})
+
+    # 1. Find user by email
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request")
+
+    # 2. Check token matches
+    if user.verification_token != token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
+
+    # 3. Check token expiry (2 minutes)
+    if datetime.now(timezone.utc) > user.token_expiry:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token expired")
+
+    # 4. Mark user as verified
+    user.verified = True
+    user.verification_token = None
+    user.token_expiry = None
+    db.commit()
+
+    logger.info("Email verified successfully", extra={"email": email})
+    return {"message": "Email verified successfully"}
