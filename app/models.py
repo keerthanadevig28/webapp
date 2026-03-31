@@ -17,9 +17,9 @@ class User(Base):
     password = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    verified = Column(Boolean, nullable=False, default=True)
-    verification_token = Column(String(36), nullable=True)             # ← ADD this
-    token_expiry = Column(DateTime(timezone=True), nullable=True)      # ← ADD this
+    verified = Column(Boolean, nullable=False, default=False)
+    verification_token = Column(String(36), nullable=True)            
+    token_expiry = Column(DateTime(timezone=True), nullable=True)    
     account_created = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     account_updated = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
