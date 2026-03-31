@@ -48,6 +48,23 @@ def create_test_user(base_url):
         }
         
         response = requests.post(f"{base_url}/v1/user", json=payload)
+
+        # Auto-verify the user in DB so tests can use authenticated endpoints
+        if response.status_code == 201:
+            try:
+                from app.database import get_db
+                from app.models import User
+                db = next(get_db())
+                user = db.query(User).filter(User.email == email).first()
+                if user:
+                    user.verified = True
+                    user.verification_token = None
+                    user.token_expiry = None
+                    db.commit()
+                db.close()
+            except Exception as e:
+                print(f"Warning: could not auto-verify user: {e}")
+
         return response, email, password
     
     return _create_user

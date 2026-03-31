@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     s3_bucket_name: str = ""
     aws_region: str = "us-east-1"
 
+    sns_topic_arn: str = "" 
+
     @property
     def database_url(self) -> str:
         return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
