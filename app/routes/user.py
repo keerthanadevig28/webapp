@@ -133,6 +133,8 @@ def verify_email(email: str, token: str, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request")
+    if user.verified:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already verified")
 
     # 2. Check token matches
     if user.verification_token != token:
