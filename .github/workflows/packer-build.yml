@@ -7,6 +7,10 @@ on:
     branches:
       - main
 
+# Only run when PR is actually merged, not just closed
+env:
+  IS_MERGED: ${{ github.event.pull_request.merged == true }}
+
 jobs:
   test:
     if: github.event.pull_request.merged == true
