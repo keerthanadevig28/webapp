@@ -310,3 +310,4 @@ The application automatically creates the following tables:
 - `check_datetime` (DateTime): Health check timestamp
 
 
+ 
