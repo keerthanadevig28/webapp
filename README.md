@@ -308,3 +308,4 @@ The application automatically creates the following tables:
 #### `health_checks` table
 - `check_id` (BigInt): Primary key
 - `check_datetime` (DateTime): Health check timestamp
+
