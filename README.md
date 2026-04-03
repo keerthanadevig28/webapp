@@ -309,3 +309,4 @@ The application automatically creates the following tables:
 - `check_id` (BigInt): Primary key
 - `check_datetime` (DateTime): Health check timestamp
 
+
