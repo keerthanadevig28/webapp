@@ -1,12 +1,15 @@
 name: Packer Build
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
       - main
 
 jobs:
   test:
+    if: github.event.pull_request.merged == true
     name: Run Integration Tests
     runs-on: ubuntu-latest
 
@@ -81,6 +84,7 @@ jobs:
           fi
 
   build-artifact:
+    if: github.event.pull_request.merged == true
     name: Build Application Artifact
     runs-on: ubuntu-latest
     needs: test
@@ -109,7 +113,8 @@ jobs:
           retention-days: 1
 
   build-ami:
-    name: Build AWS AMI
+    if: github.event.pull_request.merged == true
+    name: Build AWS AMI in DEV and Deploy to DEMO
     runs-on: ubuntu-latest
     needs: build-artifact
 
@@ -122,12 +127,12 @@ jobs:
         with:
           name: webapp-artifact
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS Credentials (DEV)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.DEV_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEV_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@main
@@ -139,79 +144,69 @@ jobs:
           cd packer
           packer init .
 
-      - name: Build AMI
+      - name: Build AMI in DEV and share with DEMO
+        id: build_ami
         run: |
           cd packer
           packer build \
-            -var "aws_region=${{ secrets.AWS_REGION }}" \
+            -var "aws_region=us-east-1" \
             -var "aws_ami_users=[\"${{ secrets.AWS_DEMO_ACCOUNT_ID }}\"]" \
             -var "app_artifact=../webapp.zip" \
             -only='amazon-ebs.webapp' \
-            .
+            . | tee packer_output.txt
 
-  build-gcp-image:
-    name: Build GCP Image
-    runs-on: ubuntu-latest
-    needs: build-artifact
+          # Extract AMI ID from Packer output
+          AMI_ID=$(grep -oP 'ami-[a-z0-9]+' packer_output.txt | tail -1)
+          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+          echo "Built AMI: $AMI_ID"
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download application artifact
-        uses: actions/download-artifact@v4
+      - name: Reconfigure AWS CLI for DEMO account
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          name: webapp-artifact
+          aws-access-key-id: ${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Setup Packer
-        uses: hashicorp/setup-packer@main
-        with:
-          version: 'latest'
-
-      - name: Initialize Packer
+      - name: Create new Launch Template version with latest AMI
         run: |
-          cd packer
-          packer init .
+          aws ec2 create-launch-template-version \
+            --launch-template-name csye6225_asg \
+            --source-version '$Latest' \
+            --launch-template-data "{\"ImageId\":\"${{ env.AMI_ID }}\"}"
+          echo "Launch template updated with AMI: ${{ env.AMI_ID }}"
 
-      - name: Build GCP Image
+      - name: Update ASG to use latest Launch Template version
         run: |
-          cd packer
-          packer build \
-            -var "gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
-            -var "app_artifact=../webapp.zip" \
-            -only='googlecompute.webapp' \
-            .
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name csye6225-vpc-webapp-asg \
+            --launch-template "LaunchTemplateName=csye6225_asg,Version=\$Latest"
+          echo "ASG updated to use \$Latest launch template version"
 
-      - name: Share GCP Image with DEMO project
+      - name: Start Instance Refresh
         run: |
-          # Get the most recently built webapp image name
-          IMAGE_NAME=$(gcloud compute images list \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --filter="family=webapp" \
-            --sort-by="~creationTimestamp" \
-            --limit=1 \
-            --format="value(name)")
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name csye6225-vpc-webapp-asg \
+            --query 'InstanceRefreshId' \
+            --output text)
+          echo "REFRESH_ID=$REFRESH_ID" >> $GITHUB_ENV
+          echo "Instance refresh started: $REFRESH_ID"
 
-          echo "Sharing image: $IMAGE_NAME with DEMO project"
-
-          # Get DEMO project number
-          DEMO_PROJECT_NUMBER=$(gcloud projects describe ${{ secrets.GCP_DEMO_PROJECT_ID }} \
-            --format="value(projectNumber)")
-
-          echo "DEMO project number: $DEMO_PROJECT_NUMBER"
-
-          # Grant compute image user role to DEMO project's default compute service account
-          gcloud compute images add-iam-policy-binding $IMAGE_NAME \
-            --project=${{ secrets.GCP_PROJECT_ID }} \
-            --member="serviceAccount:${DEMO_PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-            --role="roles/compute.imageUser"
-
-          echo "Image $IMAGE_NAME successfully shared with DEMO project"
+      - name: Wait for Instance Refresh to complete
+        run: |
+          echo "Waiting for instance refresh ${{ env.REFRESH_ID }} to complete..."
+          while true; do
+            STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name csye6225-vpc-webapp-asg \
+              --instance-refresh-ids ${{ env.REFRESH_ID }} \
+              --query 'InstanceRefreshes[0].Status' \
+              --output text)
+            echo "Current status: $STATUS"
+            if [ "$STATUS" = "Successful" ]; then
+              echo "Instance refresh completed successfully!"
+              exit 0
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "Instance refresh failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 30
+          done
