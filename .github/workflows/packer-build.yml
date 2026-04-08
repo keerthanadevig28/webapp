@@ -182,14 +182,14 @@ jobs:
       - name: Update ASG to use latest Launch Template version
         run: |
           aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name csye6225-webapp-asg \
+            --auto-scaling-group-name csye6225-vpc-webapp-asg \
             --launch-template "LaunchTemplateName=csye6225_asg,Version=\$Latest"
           echo "ASG updated to use \$Latest launch template version"
 
       - name: Start Instance Refresh
         run: |
           REFRESH_ID=$(aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name csye6225-webapp-asg \
+            --auto-scaling-group-name csye6225-vpc-webapp-asg \
             --query 'InstanceRefreshId' \
             --output text)
           echo "REFRESH_ID=$REFRESH_ID" >> $GITHUB_ENV
@@ -200,7 +200,7 @@ jobs:
           echo "Waiting for instance refresh ${{ env.REFRESH_ID }} to complete..."
           while true; do
             STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name csye6225-webapp-asg \
+              --auto-scaling-group-name csye6225-vpc-webapp-asg \
               --instance-refresh-ids ${{ env.REFRESH_ID }} \
               --query 'InstanceRefreshes[0].Status' \
               --output text)
