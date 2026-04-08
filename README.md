@@ -283,3 +283,4 @@ pytest tests/ --cov=app --cov-report=html
 ```
 
 The test suite includes 21 integration tests covering health checks, user creation, authentication, user updates, and negative cases.
+# trigger build
