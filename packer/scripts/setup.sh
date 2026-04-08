@@ -41,3 +41,13 @@ echo "=== Creating virtual environment ==="
 sudo -u csye6225 python3.12 -m venv /opt/webapp/venv
 
 echo "=== Setup script completed ==="
+
+# Install AWS CLI v2
+echo "=== Installing AWS CLI ==="
+sudo apt-get install -y unzip curl
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+unzip /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install
+rm -rf /tmp/awscliv2.zip /tmp/aws
+aws --version
+echo "=== AWS CLI installed ==="
