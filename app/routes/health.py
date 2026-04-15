@@ -49,7 +49,39 @@ async def health_check(request: Request):
         logger.error("Health check failed — database connection error",
                      extra={"error": str(e)}, exc_info=True)
         return Response(status_code=503)
-
+@router.get("/healthz123")
+async def health_check_123(request: Request):
+    count("api.healthz123")
+    logger.info("GET /healthz123 called")
+    body = await request.body()
+    if body:
+        return Response(status_code=400)
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "X-Content-Type-Options": "nosniff"
+    }
+    settings = get_settings()
+    try:
+        with timed("api.healthz123.time"):
+            with timed("db.health_check"):
+                conn = psycopg2.connect(
+                    host=settings.db_host,
+                    port=settings.db_port,
+                    database=settings.db_name,
+                    user=settings.db_user,
+                    password=settings.db_password,
+                    connect_timeout=2
+                )
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO health_checks (check_datetime) VALUES (NOW())")
+                conn.commit()
+                cursor.close()
+                conn.close()
+        return Response(status_code=200, headers=headers)
+    except Exception as e:
+        logger.error("Health check 123 failed", extra={"error": str(e)}, exc_info=True)
+        return Response(status_code=503)
 
 @router.post("/healthz")
 @router.put("/healthz")
